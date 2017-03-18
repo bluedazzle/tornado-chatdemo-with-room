@@ -128,7 +128,8 @@ var updater = {
     showMessage: function(message) {
         var existing = $("#m" + message.id);
         if (existing.length > 0) return;
-        var node = $(message.html);
+        var div = '<div class="message" id="m' + message.id + '">' + message.body + '</div>';
+        var node = $(div);
         node.hide();
         $("#inbox").append(node);
         node.slideDown();

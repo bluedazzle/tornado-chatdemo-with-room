@@ -15,6 +15,8 @@
 # under the License.
 
 import logging
+
+import time
 import tornado.escape
 import tornado.ioloop
 import tornado.web
@@ -39,6 +41,7 @@ class MessageBuffer(object):
         # wait_for_messages to be yielded from a coroutine even though
         # it is not a coroutine itself.  We will set the result of the
         # Future when results are available.
+        self.create_new_room(room)
         result_future = Future()
         if cursor:
             new_count = 0
@@ -58,6 +61,7 @@ class MessageBuffer(object):
         future.set_result([])
 
     def new_messages(self, room, messages):
+        self.create_new_room(room)
         logging.info("Sending new message to %r listeners", len(self.room[room]['waiters']))
         for future in self.room[room]['waiters']:
             future.set_result(messages)
@@ -65,6 +69,12 @@ class MessageBuffer(object):
         self.room[room]['cache'].extend(messages)
         if len(self.room[room]['cache']) > self.cache_size:
             self.room[room]['cache'] = self.room[room]['cache'][-self.cache_size:]
+
+    def create_new_room(self, room):
+        if room not in self.room:
+            self.room[room] = {'cache': [],
+                               'waiters': set()}
+        return True
 
 
 # Making this a non-singleton is left as an exercise for the reader.
@@ -75,9 +85,7 @@ class MainHandler(tornado.web.RequestHandler):
     def get(self):
         room = self.get_argument("room", None)
         if room:
-            if room not in global_message_buffer.room:
-                global_message_buffer.room[room] = {'cache': [],
-                                                    'waiters': set()}
+            global_message_buffer.create_new_room(room)
             self.render("index.html", messages=global_message_buffer.room[room]['cache'], room=room)
 
 
@@ -85,12 +93,12 @@ class MessageNewHandler(tornado.web.RequestHandler):
     def post(self):
         message = {
             "id": str(uuid.uuid4()),
+            "timestamp": str(time.time()).split('.')[0],
             "body": self.get_argument("body"),
         }
         # to_basestring is necessary for Python 3's json encoder,
         # which doesn't accept byte strings.
-        message["html"] = tornado.escape.to_basestring(
-            self.render_string("message.html", message=message))
+        # message["html"] = message
         if self.get_argument("next", None):
             self.redirect(self.get_argument("next"))
         else:
@@ -133,7 +141,7 @@ def main():
         cookie_secret="__TODO:_GENERATE_YOUR_OWN_RANDOM_VALUE_HERE__",
         template_path=os.path.join(os.path.dirname(__file__), "templates"),
         static_path=os.path.join(os.path.dirname(__file__), "static"),
-        xsrf_cookies=True,
+        xsrf_cookies=False,
         debug=options.debug,
         )
     app.listen(options.port)
